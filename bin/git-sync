@@ -2,18 +2,19 @@
 # Git extension script which adds simplisitic mirroring of one remote repository to another
 #
 #!/bin/bash
-function git_sync_init {
+git_sync_init () {
     _src="${1}"; _dst="${2}"; _dir="${3-$(basename "${_src}")}"
     [ -n "${_src}" -a -n "${_dst}" -a -n "${_dir}" ] || return 1;
     git clone --mirror "${_src}" "${_dir}" || return $?
     git -C "${_dir}" remote add --mirror=push mirror "${_dst}" || return $?
+    git -C "${_dir}" push --prune mirror || return $?
 }
 
-function is_valid {
+is_valid () {
     git -C "${1}" remote | grep '^origin$' >/dev/null && git -C "${1}" remote | grep '^mirror$' >/dev/null && return 0
     echo "${1} is not a mirror directory" >&2; return 1;
 }
-function git_sync_update {
+git_sync_update () {
     if [ -n "${1}" ]; then
         is_valid "${1}" || return $?
         echo "Updating mirror '${1}'..."
@@ -24,7 +25,7 @@ function git_sync_update {
         git_sync_update .; return $?
     else
         unset _found;
-        for _mirror in `find . -depth 2 -type f -name HEAD -exec dirname {} \; 2>/dev/null`; do
+        for _mirror in `find . -maxdepth 2 -type f -name HEAD -exec dirname {} \; 2>/dev/null`; do
             if is_valid "${_mirror}"; then
                 git_sync_update "${_mirror}" || return $?
                 _found=1
@@ -35,12 +36,14 @@ function git_sync_update {
     fi
 }
 
-CMD="${1}"; shift
+CMD="${1}"
 case "${CMD}" in
     'init')
+        shift
         git_sync_init $@ && exit 0
         ;;
     'update')
+        shift
         git_sync_update $@ && exit 0
         ;;
     *)
