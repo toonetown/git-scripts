@@ -1,0 +1,60 @@
+##############
+# Git extension script which adds simplisitic mirroring of one remote repository to another
+#
+#!/bin/bash
+function git_sync_init {
+    _src="${1}"; _dst="${2}"; _dir="${3-$(basename "${_src}")}"
+    [ -n "${_src}" -a -n "${_dst}" -a -n "${_dir}" ] || return 1;
+    git clone --mirror "${_src}" "${_dir}" || return $?
+    git -C "${_dir}" remote add --mirror=push mirror "${_dst}" || return $?
+}
+
+function is_valid {
+    git -C "${1}" remote | grep '^origin$' >/dev/null && git -C "${1}" remote | grep '^mirror$' >/dev/null && return 0
+    echo "${1} is not a mirror directory" >&2; return 1;
+}
+function git_sync_update {
+    if [ -n "${1}" ]; then
+        is_valid "${1}" || return $?
+        echo "Updating mirror '${1}'..."
+        git -C "${1}" remote update --prune origin && git -C "${1}" push --prune mirror || return $?
+        echo ""; return 0
+    fi
+    if [ -f HEAD ]; then 
+        git_sync_update .; return $?
+    else
+        unset _found;
+        for _mirror in `find . -depth 2 -type f -name HEAD -exec dirname {} \; 2>/dev/null`; do
+            if is_valid "${_mirror}"; then
+                git_sync_update "${_mirror}" || return $?
+                _found=1
+            fi
+        done
+        [ -z "${_found}" ] && { echo "$(pwd) does not contain mirrors"; return 1; }
+        return 0
+    fi
+}
+
+CMD="${1}"; shift
+case "${CMD}" in
+    'init')
+        git_sync_init $@ && exit 0
+        ;;
+    'update')
+        git_sync_update $@ && exit 0
+        ;;
+    *)
+        ;;
+esac
+
+echo ""
+echo "Usage: git-sync init <source_repo_url> <dest_repo_url> [local_directory]"
+echo "       git-sync update [local_directory]"
+echo ""
+echo "On initialization, the local directory name is taken from the"
+echo "source_repo_url, if it is not specified."
+echo ""
+echo "If update is executed within a directory that contains multiple mirrored"
+echo "repositories, then the update command will be executed for each one."
+echo ""
+exit 1
