@@ -6,8 +6,8 @@ git_sync_init () {
     _src="${1}"; _dst="${2}"; _dir="${3-$(basename "${_src}")}"
     [ -n "${_src}" -a -n "${_dst}" -a -n "${_dir}" ] || return 1;
     git clone --mirror "${_src}" "${_dir}" || return $?
-    git -C "${_dir}" remote add --mirror=push mirror "${_dst}" || return $?
-    git -C "${_dir}" push --prune mirror || return $?
+    git -C "${_dir}" remote add --mirror=fetch mirror "${_dst}" || return $?
+    git -C "${_dir}" push --mirror --prune mirror || return $?
 }
 
 is_valid () {
@@ -18,7 +18,20 @@ git_sync_update () {
     if [ -n "${1}" ]; then
         is_valid "${1}" || return $?
         echo "Updating mirror '${1}'..."
-        git -C "${1}" remote update --prune origin && git -C "${1}" push --prune mirror || return $?
+        git -C "${1}" remote update --prune mirror 2>/dev/null || return $?
+        _refs="$(git -C "${1}" show-ref)" || return $?
+        unset _keep
+        for i in $(git -C "${1}" config --get-all sync.keep.branch 2>/dev/null); do
+            _keep="${_keep} $(echo "${_refs}" | grep " refs/heads/${i}$" | tr ' ' '|')"
+        done
+        for i in $(git -C "${1}" config --get-all sync.keep.tag 2>/dev/null); do
+            _keep="${_keep} $(echo "${_refs}" | grep " refs/tags/${i}$" | tr ' ' '|')"
+        done
+        git -C "${1}" remote update --prune origin 2>/dev/null || return $?
+        for i in ${_keep}; do
+            git -C "${1}" update-ref $(echo "${i}" | cut -d'|' -f2) $(echo "${i}" | cut -d'|' -f1) || return $?
+        done
+        git -C "${1}" push --mirror --prune mirror || return $?
         echo ""; return 0
     fi
     if [ -f HEAD ]; then 
@@ -59,5 +72,15 @@ echo "source_repo_url, if it is not specified."
 echo ""
 echo "If update is executed within a directory that contains multiple mirrored"
 echo "repositories, then the update command will be executed for each one."
+echo ""
+echo "You can add a config item to skip pruning of mirror branches or tags "
+echo "that do not exist on the origin.  The following keys are read:"
+echo "        'sync.keep.branch' - A regular expression matching a branch"
+echo "        'sync.keep.tag'    - A regular expression matching a tag"
+echo ""
+echo "Multiple configuration options are honored.  The regular expression"
+echo "matches anchored on the beginning and end of the ref name. For example:"
+echo "      git config --add sync.keep.branch \"local/.*\""
+echo "      git config --add sync.keep.tag \"local-tag\""
 echo ""
 exit 1
