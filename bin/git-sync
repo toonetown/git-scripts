@@ -1,7 +1,9 @@
+#!/bin/bash
+
 ##############
 # Git extension script which adds simplisitic mirroring of one remote repository to another
 #
-#!/bin/bash
+
 git_sync_init () {
     _src="${1}"; _dst="${2}"; _dir="${3-$(basename "${_src}")}"
     [ -n "${_src}" -a -n "${_dst}" -a -n "${_dir}" ] || return 1;
