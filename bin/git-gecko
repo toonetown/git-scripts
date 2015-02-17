@@ -1,0 +1,130 @@
+#!/bin/bash
+
+git_gecko_list () {
+    git fetch || return $?
+    git branch -v | sed -nE 's|^\*? *_upstream_/([^ ]+) +[^ ]+ +\[behind .*|\1|p'
+}
+
+git_gecko_check_branch () {
+    git branch | grep -q " ${1}$" || { echo ""; echo "No branch named '${1}'"; return 1; }
+}
+
+git_gecko_update_upstream () {
+    _VERSION="$(echo ${1} | cut -d'-' -f1)"
+    _BRANCH="$(echo ${1} | cut -d'-' -f2)"
+    _UPSTREAM="_upstream_/${_VERSION}-${_BRANCH}"
+    git_gecko_check_branch ${_UPSTREAM} || return $?
+
+    # Update the upstream
+    echo ""
+    echo "----------------------"
+    echo "Updating ${_UPSTREAM}..."
+    echo "----------------------"
+    git checkout ${_UPSTREAM} || return $?
+    git pull || return $?
+    grep -q "MOZ_APP_VERSION=${_VERSION}\." mobile/android/confvars.sh || { 
+        echo "Version is no longer ${_VERSION}"
+        return 1
+    }
+}
+
+git_gecko_skip () { 
+    if [ "${1}" == "all" ]; then
+        git fetch || return $?
+        for i in $(git_gecko_list); do
+            git_gecko_skip ${i} || return $?
+        done
+        return $?
+    fi
+    git_gecko_update_upstream ${1} || return $?; 
+}
+
+git_gecko_update () {
+    if [ "${1}" == "all" ]; then
+        git fetch || return $?
+        for i in $(git_gecko_list); do
+            git_gecko_update ${i} || return $?
+        done
+        return $?
+    fi
+    _VERSION="$(echo ${1} | cut -d'-' -f1)"
+    _BRANCH="$(echo ${1} | cut -d'-' -f2)"
+    
+    # Make sure we have all the branches needed
+    _UPSTREAM="_upstream_/${_VERSION}-${_BRANCH}"
+    _MOZ="firefox-${_VERSION}/-moz_${_BRANCH}-"
+    _BRANDED="firefox-${_VERSION}/_branded_"
+    _PATCHED="firefox-${_VERSION}/_patched_"
+    _MASTER="firefox-${_VERSION}/master"
+    for i in ${_UPSTREAM} ${_MOZ} ${_BRANDED} ${_PATCHED} ${_MASTER}; do
+        git_gecko_check_branch ${i} || return $?
+    done
+    
+    # Update the upstream
+    git_gecko_update_upstream ${1} || return $?
+    
+    # Update moz
+    echo ""
+    echo "----------------------"
+    echo "Updating ${_MOZ}..."
+    echo "----------------------"
+    git checkout ${_MOZ} || return $?
+    git merge --ff-only ${_UPSTREAM} || return $?
+
+    # Update branding and patches
+    for i in ${_BRANDED} ${_PATCHED}; do
+        echo ""
+        echo "----------------------"
+        echo "Updating ${i}..."
+        echo "----------------------"
+        git checkout ${i} || return $?
+        git rebase ${_MOZ} || return $?
+    done
+    
+    # Update master
+    echo ""
+    echo "----------------------"
+    echo "Updating ${_MASTER}..."
+    echo "----------------------"
+    git checkout ${_MASTER} || return $?
+    for i in ${_BRANDED} ${_PATCHED}; do
+        git merge -s recursive -X theirs --no-edit ${i} || return $?
+    done
+}
+
+CMD="${1}"
+case "${CMD}" in
+    'list')
+        shift
+        git_gecko_list $@ && exit 0
+        ;;
+    'update')
+        shift
+        git_gecko_update $@ && exit 0
+        ;;
+    'skip')
+        shift
+        git_gecko_skip $@ && exit 0
+        ;;
+    *)
+        ;;
+esac
+
+echo ""
+echo "Usage: git-gecko list"
+echo "       git-gecko update <version_num>-<branch_name>"
+echo "       git-gecko skip <version_num>-<branch_name>"
+echo ""
+echo "'list' will just list outdated \"upstream\" branches."
+echo ""
+echo "'update' takes a version number (i.e. 36) and a branch name"
+echo "(i.e. aurora) - as a single parameter, separated by a "
+echo "hyphen (-) - and will update the upstream branch as well"
+echo "as the branded, patched, and master branches for that version"
+echo ""
+echo "'skip' takes the same options as 'update' but only updates"
+echo "the upstream branch - thus removing it from the list"
+echo ""
+echo "Specifying 'all' for the version in update (or skip) will"
+echo "fetch or skip all the available versions."
+exit 1
