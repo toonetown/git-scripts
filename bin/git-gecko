@@ -28,6 +28,20 @@ git_gecko_update_upstream () {
     }
 }
 
+git_gecko_latest () {
+    _LATEST="${1}"
+    _FF="firefox-${2}/master"
+    for i in ${_FF} ${_LATEST}; do
+        git_gecko_check_branch ${i} || return $?
+    done
+    git checkout ${_LATEST} || return $?
+    git merge -s ours --no-edit ${_FF} || return $?
+    if [ $(git diff --name-only ${_FF} | head -n1 | wc -l) -gt 0 ]; then
+        git diff --binary ${_FF} | git apply -R --whitespace=nowarn --index || return $?
+        git commit -m "Bring ${_LATEST} up-to-date with ${_FF}" || return $?
+    fi
+}
+
 git_gecko_skip () { 
     if [ "${1}" == "all" ]; then
         git fetch || return $?
@@ -56,6 +70,7 @@ git_gecko_update () {
     _BRANDED="firefox-${_VERSION}/_branded_"
     _PATCHED="firefox-${_VERSION}/_patched_"
     _MASTER="firefox-${_VERSION}/master"
+    _TMP="tmp"  
     for i in ${_UPSTREAM} ${_MOZ} ${_BRANDED} ${_PATCHED} ${_MASTER}; do
         git_gecko_check_branch ${i} || return $?
     done
@@ -90,6 +105,23 @@ git_gecko_update () {
     for i in ${_BRANDED} ${_PATCHED}; do
         git merge -s recursive -X theirs --no-edit ${i} || return $?
     done
+    
+    # Check against temp branch
+    echo ""
+    echo "----------------------"
+    echo "Checking against ${_TMP}..."
+    echo "----------------------"  
+    git branch -D ${_TMP} 2>/dev/null
+    git checkout -b ${_TMP} ${_MOZ} || return $?
+    for i in ${_BRANDED} ${_PATCHED}; do
+        git merge -n -s recursive -X theirs --no-edit ${i} >/dev/null || return $?
+    done
+    git checkout ${_MASTER} || return $?
+    if [ $(git diff --name-only ${_TMP} | head -n1 | wc -l) -gt 0 ]; then
+        git diff --binary ${_TMP} | git apply -R --whitespace=nowarn --index || return $?
+        git commit -m "Bring ${_MASTER} up-to-date with patched ${_MOZ}" || return $?
+    fi
+    git branch -D ${_TMP} || return $?
 }
 
 CMD="${1}"
@@ -102,6 +134,10 @@ case "${CMD}" in
         shift
         git_gecko_update $@ && exit 0
         ;;
+    'latest')
+        shift
+        git_gecko_latest $@ && exit 0
+        ;;
     'skip')
         shift
         git_gecko_skip $@ && exit 0
@@ -113,6 +149,7 @@ esac
 echo ""
 echo "Usage: git-gecko list"
 echo "       git-gecko update <version_num>-<branch_name>"
+echo "       git-gecko latest <branch> <version_num>"
 echo "       git-gecko skip <version_num>-<branch_name>"
 echo ""
 echo "'list' will just list outdated \"upstream\" branches."
@@ -121,6 +158,11 @@ echo "'update' takes a version number (i.e. 36) and a branch name"
 echo "(i.e. aurora) - as a single parameter, separated by a "
 echo "hyphen (-) - and will update the upstream branch as well"
 echo "as the branded, patched, and master branches for that version"
+echo ""
+echo "'latest' will update the value of <branch> to be identical to"
+echo "the merged version for firefox-<version_num>.  It does this"
+echo "via merges - rather than rebasing, so it is appropriate for"
+echo "branches that get pushed and built from."
 echo ""
 echo "'skip' takes the same options as 'update' but only updates"
 echo "the upstream branch - thus removing it from the list"
