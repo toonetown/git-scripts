@@ -5,6 +5,22 @@ git_gecko_list () {
     git branch | sed -nE 's|^\*? *_upstream_/([^ ]+)$|\1|p'
 }
 
+git_gecko_reset () {
+    git fetch || return $?
+    for i in $(git branch -vv | sed -nE 's|^\*? *([^ ]+) +[^ ]+ +\[([a-zA-Z0-9_/-]+).*|\1\|\2|p'); do
+        _BRANCH="$(echo ${i} | cut -d'|' -f1)"
+        _ORIGIN="$(echo ${i} | cut -d'|' -f2)"
+        
+        echo ""
+        echo "----------------------"
+        echo "Resetting ${_BRANCH} to ${_ORIGIN}..."
+        echo "----------------------"
+        
+        git checkout ${_BRANCH} || return $?
+        git reset --hard ${_ORIGIN} || return $?
+    done
+}
+
 git_gecko_check_branch () {
     git branch | grep -q " ${1}$" || { echo ""; echo "No branch named '${1}'"; return 1; }
 }
@@ -119,6 +135,10 @@ case "${CMD}" in
         shift
         git_gecko_list $@ && exit 0
         ;;
+    'reset')
+        shift
+        git_gecko_reset $@ && exit 0
+        ;;
     'update')
         shift
         git_gecko_update $@ && exit 0
@@ -133,10 +153,14 @@ esac
 
 echo ""
 echo "Usage: git-gecko list"
+echo "       git-gecko reset"
 echo "       git-gecko update <version_num>-<branch_name>"
 echo "       git-gecko latest <branch> <version_num>"
 echo ""
 echo "'list' will just list \"upstream\" branches."
+echo ""
+echo "'reset' will reset the locally checked-out code to the"
+echo "servers"
 echo ""
 echo "'update' takes a version number (i.e. 36) and a branch name"
 echo "(i.e. aurora) - as a single parameter, separated by a "
