@@ -1,0 +1,85 @@
+#!/bin/bash
+
+##############
+# Git extension script which connects to a remote temporarily and pulls its changes in to the current branch
+#
+
+GIT_PULL_UPSTREAM="${GIT_PULL_UPSTREAM:-upstream-pull}"
+SKIP_ADDITION=""
+SKIP_REMOVAL=""
+
+git_pull_upstream () {
+    URL="${1}"
+    BRANCH="${2}"
+    [ -n "${URL}" -a -n "${BRANCH}" ] || return 1
+    
+    # Check that the upstream doesn't already exist - and create it if we should
+    git remote | grep -q "^${GIT_PULL_UPSTREAM}$" && {
+        if [ -z "${SKIP_ADDITION}" ]; then
+            echo "Remote named \"${GIT_PULL_UPSTREAM}\" already exists."
+            return 1
+        fi
+    } || {
+        git remote add "${GIT_PULL_UPSTREAM}" "${URL}" || return $?
+    }
+
+    # Pull the specified branch into the current branch
+    git pull --no-edit "${GIT_PULL_UPSTREAM}" "${BRANCH}"
+    RV=$?
+    
+    # Remove the remote if we should
+    if [ -z "${SKIP_REMOVAL}" ]; then
+        git remote remove "${GIT_PULL_UPSTREAM}"
+    fi
+    return ${RV}
+}
+
+case "${1}" in
+    '-n')
+        SKIP_ADDITION="yes"; SKIP_REMOVAL="yes"; shift
+        ;;
+    '-a')
+        SKIP_ADDITION="yes"; shift
+        ;;
+    *)
+        ;;
+esac
+
+URL="${1}"
+shift
+case "${URL}" in
+    'github'|'gh')
+        if [ -n "${1}" -a -n "${2}" ]; then
+            URL="https://github.com/${1}/${2}"
+            shift 2
+        else
+            URL=""
+        fi
+        ;;
+    *)
+        ;;
+esac
+
+git_pull_upstream "${URL}" $@ && exit 0
+
+echo ""
+echo "Usage: git-pull-upstream [-n|-a] <upstream-url> <upstream-branch>"
+echo "       git-pull-upstream [-n|-a] github <gh-user> <gh-project> <upstream-branch>"
+echo ""
+echo "This script creates an \"${GIT_PULL_UPSTREAM}\" remote, and pulls from it into"
+echo "the current branch.  The remote is then removed."
+echo ""
+echo "Note that \"gh\" can be substituted for the string \"github\" (or ignored entireley)."
+echo ""
+echo "Specifying the optional \"-n\" flag will prevent the remote from being removed"
+echo "at the end.  It will also allow you to sync with an upstream that is already"
+echo "existing.  The default behavior is to only add the upstream remote if it"
+echo "doesn't already exist."
+echo ""
+echo "Specifying the optional \"-a\" flag will allow you to sync with an existing"
+echo "upstream (like \"-n\"), but it *WILL* remove the upstream afterwards."
+echo ""
+echo "You can set the GIT_PULL_UPSTREAM variable to a different value to use as"
+echo "the temporary upstream name instead of \"${GIT_PULL_UPSTREAM}\"."
+echo ""
+exit 1
