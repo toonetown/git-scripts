@@ -1,0 +1,7 @@
+#!/bin/bash
+
+##############
+# Git extension script which opens SourceTree
+#
+
+open -a SourceTree "$(pwd)"
