@@ -46,7 +46,7 @@ git_sync_update () {
                 _found=1
             fi
         done
-        [ -z "${_found}" ] && { echo "$(pwd) does not contain mirrors"; return 1; }
+        [ -z "${_found}" ] && { echo "$(pwd) does not contain git mirrors"; return 2; }
         return 0
     fi
 }
@@ -60,6 +60,7 @@ case "${CMD}" in
     'update')
         shift
         git_sync_update $@ && exit 0
+        if [ $? -eq 2 ]; then exit 2; fi
         ;;
     *)
         ;;
