@@ -4,4 +4,4 @@
 # Git extension script which opens SourceTree
 #
 
-open -a SourceTree "$(pwd)"
+/usr/local/bin/stree "$(pwd)"
